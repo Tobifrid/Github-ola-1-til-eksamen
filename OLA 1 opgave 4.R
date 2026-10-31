@@ -28,17 +28,16 @@ dim(klasser)
 # klassen og ugen fra rækken og gennemsnittet af de tre seneste scores.
 kvartaler <- data.frame()                                                        # tom tabel, som fyldes i loopet
 
-for (i in 1:nrow(klasser)) {                                                     # loop: række for række
-  if (i %% 3 == 0) {                                                             # %% = modulo: resten ved division med 3. 0 = hver tredje række
-    en_raekke <- data.frame(
-      Klasse = klasser$Klasse[i],
-      Uge    = klasser$Uge[i],
-      Score  = mean(klasser$Score[(i - 2):i])                                    # gennemsnit af række i-2, i-1 og i
-    )
-    kvartaler <- bind_rows(kvartaler, en_raekke)                                 # sæt den nye række under de andre
-  }
+for (i in seq(3, nrow(klasser), by = 3)) {                                       # i = 3, 6, 9, ... 36
+  en_raekke <- data.frame(
+    Klasse = klasser$Klasse[i],
+    Uge    = klasser$Uge[i],
+    Score  = mean(klasser$Score[(i - 2):i])                                      # gennemsnit af række i-2, i-1 og i
+  )
+  kvartaler <- bind_rows(kvartaler, en_raekke)                                   # sæt den nye række under de andre
 }
 kvartaler
+# samme 12 rækker som før
 # 12 rækker: 3 "kvartaler" (uge 3, 6 og 9) for hver af de 4 klasser.
 # Opgaven skriver 9x3, men 36 rækker / 3 giver 12 rækker.
 
