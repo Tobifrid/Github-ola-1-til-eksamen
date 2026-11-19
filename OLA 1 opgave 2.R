@@ -72,6 +72,38 @@ summary(model_postnr)$r.squared
 # R2 0,70: beliggenhed forklarer mest af alle, men modellen har én variabel pr. postnummer,
 # så R2 bliver let for højt (overfitting)
 
+# ---- Ekstra: postnummer opdelt i de 5 regioner ----
+# Færre grupper end postnumrene, så modellen ikke overfitter. Opdelingen er en tilnærmelse:
+# postnumre følger ikke regionsgrænserne helt (fx Greve/Solrød 2670-2690 hører til Sjælland,
+# Hedensted 7130-7171 til Midtjylland)
+boliger_med_region <- boliger |>
+  mutate(region = case_when(
+    between(postnr, 1000, 3799) ~ "Hovedstaden",                                  # København, Nordsjælland og Bornholm (37xx)
+    between(postnr, 4000, 4999) ~ "Sjælland",
+    between(postnr, 5000, 6899) ~ "Syddanmark",                                   # Fyn og Sønderjylland
+    between(postnr, 7000, 7299) ~ "Syddanmark",                                   # Fredericia, Vejle, Billund
+    between(postnr, 6900, 6999) ~ "Midtjylland",                                  # Skjern og Ringkøbing
+    between(postnr, 7300, 7699) ~ "Midtjylland",                                  # Herning, Holstebro, Struer
+    between(postnr, 7800, 8999) ~ "Midtjylland",                                  # Skive, Aarhus, Randers, Viborg
+    between(postnr, 7700, 7799) ~ "Nordjylland",                                  # Thisted
+    between(postnr, 7900, 9999) ~ "Nordjylland"                                   # Mors, Aalborg, Hjørring
+  ))
+
+boliger_med_region |> count(region)                                             # TJEK: hvor mange boliger i hver region, og ingen NA
+
+boliger_med_region |>
+  group_by(region) |>
+  summarise(median_kvadratmeterpris = median(kvadratmeterpris, na.rm = TRUE)) |>
+  arrange(desc(median_kvadratmeterpris))                                         # hvilken region er dyrest pr. m²
+
+model_region <- lm(kvadratmeterpris ~ region, data = boliger_med_region)         # region bliver selv lavet om til factor
+summary(model_region)                                                            # Hovedstaden er reference (først alfabetisk)
+summary(model_region)$r.squared
+# R2 ...: skriv tallet her og sammenlign med 0,70 fra model_postnr.
+# Koefficienterne viser, hvor meget lavere kvadratmeterprisen er end i Hovedstaden.
+# Region har kun 4 variable i stedet for én pr. postnummer, så modellen er mere robust,
+# men vi mister forskellen inde i regionen (København og Bornholm er i samme gruppe)
+
 # ---- Korrelationsmatrix: hænger de 5 x'er sammen med hinanden? ----
 korrelationsmatrix <- boliger |>
   select(kvadratmeterpris, all_of(x_variable)) |>
