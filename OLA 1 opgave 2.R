@@ -1,5 +1,5 @@
 # =====================================================================
-# OLA 1 – Opgave 2: Korrelation og simpel lineær regression
+# OLA 1 – Opgave 2: Korrelation og simpel lineær regression (RETTET: landsdele og overfitting-tjek)
 # =====================================================================
 # Opgave 2 bygger på de rensede boligdata fra opgave 1 (boliger).
 # source() kører hele "OLA 1 opgave 1.R" først, så boliger findes, før opgave 2 starter.
@@ -66,43 +66,126 @@ regressioner |> arrange(desc(R2))                                               
 # Forbehold: den månedlige udgift indeholder ejendomsskat, som afhænger af boligens værdi,
 # så den er nærmest en del af prisen selv
 
-# Ekstra: postnummer som kategori (factor), så hvert postnummer får sit eget niveau
+
+# ---- Ekstra: postnummer som kategori (factor) ----
+# Hvert postnummer får sit eget niveau, altså én dummy-variabel pr. postnummer
 model_postnr <- lm(kvadratmeterpris ~ factor(postnr), data = boliger)
-summary(model_postnr)$r.squared
-# R2 0,70: beliggenhed forklarer mest af alle, men modellen har én variabel pr. postnummer,
-# så R2 bliver let for højt (overfitting)
+length(coef(model_postnr)) - 1                                                   # antal x-variable i modellen (ca. én pr. postnummer)
+summary(model_postnr)$r.squared                                                  # R2 ca. 0,70
+summary(model_postnr)$adj.r.squared                                              # justeret R2: straffer for mange x'er
+# Mange postnumre har kun få boliger. Så tilpasser modellen sig de få boliger (støj) i stedet for
+# den generelle sammenhæng: det er overfitting. Det tjekkes med train/test nedenfor.
 
-# ---- Ekstra: postnummer opdelt i de 5 regioner ----
-# Færre grupper end postnumrene, så modellen ikke overfitter. Opdelingen er en tilnærmelse:
-# postnumre følger ikke regionsgrænserne helt (fx Greve/Solrød 2670-2690 hører til Sjælland,
-# Hedensted 7130-7171 til Midtjylland)
-boliger_med_region <- boliger |>
-  mutate(region = case_when(
-    between(postnr, 1000, 3799) ~ "Hovedstaden",                                  # København, Nordsjælland og Bornholm (37xx)
-    between(postnr, 4000, 4999) ~ "Sjælland",
-    between(postnr, 5000, 6899) ~ "Syddanmark",                                   # Fyn og Sønderjylland
-    between(postnr, 7000, 7299) ~ "Syddanmark",                                   # Fredericia, Vejle, Billund
-    between(postnr, 6900, 6999) ~ "Midtjylland",                                  # Skjern og Ringkøbing
-    between(postnr, 7300, 7699) ~ "Midtjylland",                                  # Herning, Holstebro, Struer
-    between(postnr, 7800, 8999) ~ "Midtjylland",                                  # Skive, Aarhus, Randers, Viborg
-    between(postnr, 7700, 7799) ~ "Nordjylland",                                  # Thisted
-    between(postnr, 7900, 9999) ~ "Nordjylland"                                   # Mors, Aalborg, Hjørring
-  ))
 
-boliger_med_region |> count(region)                                             # TJEK: hvor mange boliger i hver region, og ingen NA
+# ---- Ekstra: postnummer opdelt i DST's 11 landsdele ----
+# Landsdele er grupper af kommuner, ikke af postnumre. Opdelingen herunder er derfor en tilnærmelse,
+# hvor postnumrene er lagt i den landsdel, som de fleste af dem hører til.
+# Først får alle boliger NA, og derefter sætter hver linje en landsdel for et interval af postnumre.
+# Hver linje overskriver de tidligere, så den SIDSTE linje, der passer, vinder (omvendt af case_when). Derfor: brede intervaller først, undtagelser til sidst.
+boliger_med_landsdel <- boliger                                                  # kopi af boligerne
+boliger_med_landsdel$landsdel <- NA                                              # start: ingen landsdel
+postnr <- boliger_med_landsdel$postnr                                            # kort navn, så linjerne kan læses
+# -- de brede intervaller først --
+boliger_med_landsdel$landsdel[postnr >= 1000 & postnr <= 2500] <- "Byen København"        # København, Frederiksberg og Valby
+boliger_med_landsdel$landsdel[postnr >= 2600 & postnr <= 2959] <- "Københavns omegn"      # fx Glostrup, Herlev, Lyngby, Gentofte
+boliger_med_landsdel$landsdel[postnr >= 3000 & postnr <= 3699] <- "Nordsjælland"          # Helsingør, Hillerød, Frederikssund
+boliger_med_landsdel$landsdel[postnr >= 3700 & postnr <= 3799] <- "Bornholm"
+boliger_med_landsdel$landsdel[postnr >= 4000 & postnr <= 4999] <- "Vest- og Sydsjælland"  # Sjælland, Lolland og Falster
+boliger_med_landsdel$landsdel[postnr >= 4000 & postnr <= 4099] <- "Østsjælland"           # Roskilde (overskriver linjen over)
+boliger_med_landsdel$landsdel[postnr >= 4600 & postnr <= 4629] <- "Østsjælland"           # Køge (overskriver)
+boliger_med_landsdel$landsdel[postnr >= 5000 & postnr <= 5999] <- "Fyn"
+boliger_med_landsdel$landsdel[postnr >= 6000 & postnr <= 6899] <- "Sydjylland"            # Sønderjylland, Esbjerg og Varde
+boliger_med_landsdel$landsdel[postnr >= 6900 & postnr <= 6999] <- "Vestjylland"           # Ringkøbing og Skjern
+boliger_med_landsdel$landsdel[postnr >= 7000 & postnr <= 7299] <- "Sydjylland"            # Fredericia, Vejle, Billund
+boliger_med_landsdel$landsdel[postnr >= 7300 & postnr <= 7699] <- "Vestjylland"           # Brande, Herning, Holstebro, Struer
+boliger_med_landsdel$landsdel[postnr >= 7700 & postnr <= 7799] <- "Nordjylland"           # Thisted
+boliger_med_landsdel$landsdel[postnr >= 7800 & postnr <= 7899] <- "Vestjylland"           # Skive
+boliger_med_landsdel$landsdel[postnr >= 8000 & postnr <= 8999] <- "Østjylland"            # Aarhus, Randers, Horsens, Silkeborg
+boliger_med_landsdel$landsdel[postnr >= 9000 & postnr <= 9999] <- "Nordjylland"           # Aalborg, Hjørring, Frederikshavn
+# -- undtagelser til sidst, så de overskriver de brede intervaller --
+boliger_med_landsdel$landsdel[postnr >= 2670 & postnr <= 2690] <- "Østsjælland"           # Greve og Solrød
+boliger_med_landsdel$landsdel[postnr >= 2770 & postnr <= 2791] <- "Byen København"        # Kastrup og Dragør (Tårnby og Dragør)
+boliger_med_landsdel$landsdel[postnr %in% c(2700, 2720)]       <- "Byen København"        # Brønshøj og Vanløse
+boliger_med_landsdel$landsdel[postnr >= 2960 & postnr <= 2990] <- "Nordsjælland"          # Rungsted, Hørsholm, Kokkedal, Nivå
+boliger_med_landsdel$landsdel[postnr == 2765]                  <- "Nordsjælland"          # Smørum (Egedal)
+boliger_med_landsdel$landsdel[postnr >= 7130 & postnr <= 7171] <- "Østjylland"            # Hedensted og Juelsminde
+boliger_med_landsdel$landsdel[postnr >= 7300 & postnr <= 7329] <- "Sydjylland"            # Jelling, Gadbjerg og Give (Vejle)
+boliger_med_landsdel$landsdel[postnr >= 8800 & postnr <= 8850] <- "Vestjylland"           # Viborg og Bjerringbro
+boliger_med_landsdel$landsdel[postnr >= 7900 & postnr <= 7999] <- "Nordjylland"           # Mors (Nykøbing M)
 
-boliger_med_region |>
-  group_by(region) |>
-  summarise(median_kvadratmeterpris = median(kvadratmeterpris, na.rm = TRUE)) |>
-  arrange(desc(median_kvadratmeterpris))                                         # hvilken region er dyrest pr. m²
+boliger_med_landsdel |> count(landsdel, sort = TRUE)                            # TJEK: 11 landsdele og ingen NA
+boliger_med_landsdel |> filter(is.na(landsdel)) |> distinct(postnr)             # TJEK: hvilke postnumre fik ingen landsdel? (skal være tom)
+boliger_med_landsdel |> filter(postnr %in% c(7900, 7130, 2670)) |>
+  distinct(postnr, by, landsdel)                                                 # TJEK: Mors, Hedensted og Greve ligger rigtigt
 
-model_region <- lm(kvadratmeterpris ~ region, data = boliger_med_region)         # region bliver selv lavet om til factor
-summary(model_region)                                                            # Hovedstaden er reference (først alfabetisk)
-summary(model_region)$r.squared
-# R2 ...: skriv tallet her og sammenlign med 0,70 fra model_postnr.
-# Koefficienterne viser, hvor meget lavere kvadratmeterprisen er end i Hovedstaden.
-# Region har kun 4 variable i stedet for én pr. postnummer, så modellen er mere robust,
-# men vi mister forskellen inde i regionen (København og Bornholm er i samme gruppe)
+boliger_med_landsdel |>
+  group_by(landsdel) |>
+  summarise(antal = n(),
+            median_kvadratmeterpris = median(kvadratmeterpris, na.rm = TRUE)) |>
+  arrange(desc(median_kvadratmeterpris))                                         # hvilken landsdel er dyrest pr. m²
+
+model_landsdel <- lm(kvadratmeterpris ~ landsdel, data = boliger_med_landsdel)   # landsdel bliver selv lavet om til factor
+summary(model_landsdel)                                                          # referencen er den første alfabetisk (Bornholm)
+# Koefficienterne viser, hvor meget højere eller lavere kvadratmeterprisen er end på Bornholm.
+# Landsdel har kun 10 x-variable i stedet for én pr. postnummer, så modellen er mere robust,
+# men vi mister forskellen inde i landsdelen.
+
+
+# =====================================================================
+# Overfitting: sammenlign modellerne
+# =====================================================================
+# 1) R2 mod justeret R2
+# R2 stiger altid, når man tilføjer flere x'er. Justeret R2 trækker fra for hver ekstra x:
+#   justeret R2 = 1 - (1 - R2) * (n - 1) / (n - k - 1),   n = antal boliger, k = antal x'er
+# Hvis R2 og justeret R2 ligger langt fra hinanden, er der mange x'er, som ikke bidrager.
+model_areal <- lm(kvadratmeterpris ~ boligareal_m2, data = boliger)
+
+sammenligning <- data.frame(
+  model       = c("boligareal", "landsdel", "postnummer"),
+  antal_x     = c(length(coef(model_areal)), length(coef(model_landsdel)), length(coef(model_postnr))) - 1,
+  R2          = c(summary(model_areal)$r.squared, summary(model_landsdel)$r.squared, summary(model_postnr)$r.squared),
+  justeret_R2 = c(summary(model_areal)$adj.r.squared, summary(model_landsdel)$adj.r.squared, summary(model_postnr)$adj.r.squared)
+)
+sammenligning |> mutate(across(c(R2, justeret_R2), ~ round(.x, 3)))
+# Skriv tallene her, når du har kørt det: R2 og justeret R2 for landsdel og postnummer.
+
+# 2) Train/test: hvor godt rammer modellen boliger, den IKKE har set?
+# Data deles tilfældigt: 80 % bruges til at lave modellen (træning), 20 % til at teste den.
+# En overfittet model er god på træningsdata, men dårligere på testdata.
+model_data <- boliger_med_landsdel |>
+  filter(is.finite(kvadratmeterpris), !is.na(landsdel))                          # kun boliger med kvadratmeterpris og landsdel
+
+set.seed(1)                                                                      # samme tilfældige opdeling hver gang
+traening_raekker <- sample(nrow(model_data), size = round(0.8 * nrow(model_data)))
+traening <- model_data[traening_raekker, ]                                       # 80 % til at lave modellen
+test     <- model_data[-traening_raekker, ]                                      # 20 % til at teste den
+
+# Et postnummer, der kun er i testdata, har ingen koefficient i modellen, så predict() fejler.
+# Derfor tester vi kun på boliger, hvis postnummer også findes i træningsdata.
+test <- test |> filter(postnr %in% traening$postnr)
+
+rmse <- function(faktisk, forudsagt) sqrt(mean((faktisk - forudsagt)^2))         # typisk fejl i kr. pr. m²
+
+tt_areal    <- lm(kvadratmeterpris ~ boligareal_m2,  data = traening)
+tt_landsdel <- lm(kvadratmeterpris ~ landsdel,       data = traening)
+tt_postnr   <- lm(kvadratmeterpris ~ factor(postnr), data = traening)
+
+train_test <- data.frame(
+  model = c("boligareal", "landsdel", "postnummer"),
+  RMSE_traening = c(rmse(traening$kvadratmeterpris, predict(tt_areal)),
+                    rmse(traening$kvadratmeterpris, predict(tt_landsdel)),
+                    rmse(traening$kvadratmeterpris, predict(tt_postnr))),
+  RMSE_test     = c(rmse(test$kvadratmeterpris, predict(tt_areal,    newdata = test)),
+                    rmse(test$kvadratmeterpris, predict(tt_landsdel, newdata = test)),
+                    rmse(test$kvadratmeterpris, predict(tt_postnr,   newdata = test)))
+) |>
+  mutate(stigning_pct = round((RMSE_test / RMSE_traening - 1) * 100, 1))         # hvor meget værre på testdata
+train_test
+# Sådan læses tabellen: Hvis postnummer-modellens fejl stiger meget mere fra træning til test end
+# landsdel-modellens, er det tegn på overfitting. Den model med lavest RMSE_test er den bedste til
+# at forudsige nye boliger, uanset hvilken der har højest R2.
+# Skriv tallene og konklusionen her, når du har kørt det.
+
 
 # ---- Korrelationsmatrix: hænger de 5 x'er sammen med hinanden? ----
 korrelationsmatrix <- boliger |>
